@@ -7,7 +7,7 @@ Implementation is based on using Meteor.EnvironmentVariable to store the MongoDB
 
 ```
 // server-side
-import {runInTransaction} from 'bhunjadi/mongo-transactions';
+import {runInTransaction} from 'meteor:bhunjadi/mongo-transactions';
 
 const Invoice = new Mongo.Collection('invoice');
 const LineItems = new Mongo.Collection('lineItems');
@@ -29,7 +29,8 @@ function (invoice, lineItems) {
 runInTransaction<R>(fn: () => R, options?: any): R;
 ```
 
-fn - method to be run in transaction
+fn - method to be run in transaction  
+
 options - optional SessionOptions, https://mongodb.github.io/node-mongodb-native/3.6/api/global.html#SessionOptions
 
 
