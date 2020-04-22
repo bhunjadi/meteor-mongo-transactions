@@ -1,4 +1,4 @@
-import {runInTransaction} from 'meteor/bhunjadi:mongo-transactions';
+import {runInTransaction, isInTransaction} from 'meteor/bhunjadi:mongo-transactions';
 import {expect} from 'chai';
 import {Invoice, InvoiceItem} from '../collections';
 
@@ -168,6 +168,18 @@ describe('Server side testing', function () {
                     runInTransaction(() => {});
                 });
             }).to.throw(/Nested transactions are not supported/);
+        });
+    });
+
+    describe('isInTransaction', function () {
+        it('returns false by default', function () {
+            expect(isInTransaction()).to.be.false;
+        });
+
+        it('returns true when inside the transaction', function () {
+            runInTransaction(() => {
+                expect(isInTransaction()).to.be.true;
+            });
         });
     });
 });

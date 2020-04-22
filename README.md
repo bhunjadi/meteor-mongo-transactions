@@ -7,7 +7,7 @@ Implementation is based on using Meteor.EnvironmentVariable to store the MongoDB
 
 ```
 // server-side
-import {runInTransaction} from 'meteor:bhunjadi/mongo-transactions';
+import {runInTransaction} from 'meteor/bhunjadi:mongo-transactions';
 
 const Invoice = new Mongo.Collection('invoice');
 const LineItems = new Mongo.Collection('lineItems');
@@ -24,7 +24,7 @@ function (invoice, lineItems) {
 }
 ```
 
-### Exported method
+### Exported methods/variables
 ```
 runInTransaction<R>(fn: () => R, options?: any): R;
 ```
@@ -33,6 +33,20 @@ fn - method to be run in transaction
 
 options - optional SessionOptions, https://mongodb.github.io/node-mongodb-native/3.6/api/global.html#SessionOptions
 
+
+```
+isInTransaction(): boolean;
+```
+
+Whether we already are in the transaction.
+
+```
+sessionVariable: Meteor.EnvironmentVariable
+```
+This is the actual `Meteor.EnvironmentVariable` instance used by the package.
+You could get MongoDB's [ClientSession](https://mongodb.github.io/node-mongodb-native/3.6/api/ClientSession.html) instance with `sessionVariable.get()`.
+
+It will return `undefined` if there is no session.
 
 ### Testing
 

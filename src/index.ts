@@ -3,12 +3,12 @@ import {MongoInternals} from 'meteor/mongo';
 /**
  * Ideas from:
  * https://forums.meteor.com/t/solved-transactions-with-mongodb-meteor-methods/48677
- * 
+ *
  * Mongo native driver docs (Collection related):
  * https://mongodb.github.io/node-mongodb-native/3.6/api/Collection.html
  */
 
-const sessionVariable = new Meteor.EnvironmentVariable();
+export const sessionVariable = new Meteor.EnvironmentVariable();
 
 /**
  * Function that adds session (if necessary) to options and callback method arguments.
@@ -47,14 +47,14 @@ const RawCollection = MongoInternals.NpmModule.Collection;
 
 /**
  * Most of the MongoDB's Collection methods belong in one of the three categories by the signature:
- * 1. (options, callback) 
+ * 1. (options, callback)
  * 2. (param1, options, callback)
  * 3. (param1, param2, options, callback)
  * 4. (param1, param2, param3, options, callback)
- * 
+ *
  * Options and callback are always optional.
  * ParamN - they might be optional, too.
- * 
+ *
  * To simplify the overriding process, these methods are grouped into these groups and then overridden.
  */
 const METHODS_WITH_ZERO_PARAMS = [
@@ -73,24 +73,24 @@ const METHODS_WITH_ZERO_PARAMS = [
  * aggregate, count, countDocuments - optional first param
  */
 const METHODS_WITH_ONE_PARAM = [
-    'insert', 
-    'insertOne', 
-    'insertMany', 
-    'remove', 
-    'deleteOne', 
-    'deleteMany', 
-    'bulkWrite', 
+    'insert',
+    'insertOne',
+    'insertMany',
+    'remove',
+    'deleteOne',
+    'deleteMany',
+    'bulkWrite',
     'aggregate',
-    'count', 
-    'countDocuments', 
-    'createIndex', 
-    'createIndexes', 
-    'dropIndex', 
+    'count',
+    'countDocuments',
+    'createIndex',
+    'createIndexes',
+    'dropIndex',
     'ensureIndex',
-    'findOne', 
-    'findOneAndDelete', 
-    'indexExists', 
-    'rename', 
+    'findOne',
+    'findOneAndDelete',
+    'indexExists',
+    'rename',
     'save',
 ];
 
@@ -196,12 +196,12 @@ const originalFind = RawCollection.prototype.find;
 RawCollection.prototype.find = function (query, options) {
     const session = sessionVariable.get();
     if (session) {
-        return originalFind.find(query, options);
+        return originalFind.call(this, query, {
+            ...options,
+            session,
+        });
     }
-    return originalFind.call(this, query, {
-        ...options,
-        session,
-    });
+    return originalFind.call(this, query, options);
 };
 
 function createSession(options) {
@@ -233,4 +233,9 @@ export function runInTransaction<R>(fn: () => R, options?: any): R {
     });
 
     return result;
+}
+
+export function isInTransaction(): boolean {
+    const session = sessionVariable.get();
+    return session?.inTransaction() ?? false;
 }
