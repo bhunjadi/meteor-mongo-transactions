@@ -36,7 +36,7 @@ function getOptionsAndCallbackArgs(...args) {
             ...optionsOrCallback,
             session,
         }];
-}
+    }
 
     const [options, callback] = args;
     return [{
@@ -206,12 +206,18 @@ RawCollection.prototype.find = function (query, options) {
     return originalFind.call(this, query, options);
 };
 
-function createSession(options) {
+function getClient() {
     const {client} = MongoInternals.defaultRemoteCollectionDriver().mongo;
-    return client.startSession(options);
+    return client;
 }
 
-export function runInTransaction<R>(fn: () => R, options?: any): R {
+function createSession(options) {
+    return getClient().startSession(options);
+}
+
+export function runInTransaction<R>(fn: () => R, options: any = {
+    w: 'majority',
+}): R {
     if (sessionVariable.get()) {
         throw new Error('Nested transactions are not supported');
     }

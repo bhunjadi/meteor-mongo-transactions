@@ -1,5 +1,6 @@
 import {runInTransaction, isInTransaction} from 'meteor/bhunjadi:mongo-transactions';
 import {expect} from 'chai';
+import EventEmitter from 'events';
 import {Invoice, InvoiceItem} from '../collections';
 
 describe('Server side testing', function () {
@@ -161,29 +162,7 @@ describe('Server side testing', function () {
         });
     });
 
-    describe('nested transactions', function () {
-        it('throws on nested transactions', function () {
-            expect(() => {
-                runInTransaction(() => {
-                    runInTransaction(() => {});
-                });
-            }).to.throw(/Nested transactions are not supported/);
-        });
-    });
-
-    describe('isInTransaction', function () {
-        it('returns false by default', function () {
-            expect(isInTransaction()).to.be.false;
-        });
-
-        it('returns true when inside the transaction', function () {
-            runInTransaction(() => {
-                expect(isInTransaction()).to.be.true;
-            });
-        });
-    });
-
-    describe.only('using rawCollection()', function () {
+    describe('using rawCollection()', function () {
         let insertWriteResult;
         let invoiceId;
 
@@ -199,7 +178,6 @@ describe('Server side testing', function () {
 
             expect(insertWriteResult.insertedCount).to.be.equal(1);
 
-            // console.log('promise', promiseId);
             const first = Invoice.findOne({raw: true});
             const snd = Invoice.findOne({raw: false});
 
@@ -217,6 +195,113 @@ describe('Server side testing', function () {
             }).to.throw();
 
             expect(Invoice.find().count()).to.be.equal(0);
+        });
+    });
+
+    /**
+     * Whether this should work and if this is in the scope of this package to solve is up for debate.
+     * It looks like these findings mean that the package is not compatible with matb33:collection-hooks.
+     */
+    describe.skip('using async callbacks', function () {
+        /**
+         *
+         * Testing if "MongoError: Transaction N has been aborted." can occur.
+         *
+         * This can happen when using callbacks and it seems that there is no reliable way to
+         * make this work.
+         * It could be bypassed with long enough Meteor._sleepForMs() call. 0ms might work, too.
+         * The end result is that we have an error in the console, but nothing is written to the DB.
+         *
+         * That being said, I assume there is a possibility that async callback takes a long time and we
+         * lose the client session, which would result in InvoiceItem to be written, but not an Invoice.
+         *
+         */
+        it('callback is executed within transaction', function () {
+            expect(() => {
+                runInTransaction(() => {
+                    Invoice.insert({}, () => {
+                        InvoiceItem.insert({});
+                    })
+                    throw new Error('fail');
+                });
+            }).to.throw();
+
+            expect(Invoice.find().count()).to.be.equal(0);
+            expect(InvoiceItem.find().count()).to.be.equal(0);
+        });
+
+        /**
+         * Another callbacks use case, but this time we throw an error in async callback.
+         * This time, we are guaranteed to have incorrect results; both Invoice and InvoiceItem
+         * will be written to DB.
+         */
+        it('callback error should cause abort', function () {
+            runInTransaction(() => {
+                Invoice.insert({}, (err, res) => {
+                    InvoiceItem.insert({});
+                    throw new Error('fail');
+                });
+            });
+
+            expect(Invoice.find().count()).to.be.equal(0);
+            expect(InvoiceItem.find().count()).to.be.equal(0);
+        });
+    });
+
+    describe('Event emitter', function () {
+        it('is executed in transaction', function () {
+            const emitter = new EventEmitter();
+            emitter.on('event', () => {
+                Invoice.insert({});
+            });
+
+            expect(() => {
+                runInTransaction(() => {
+                    emitter.emit('event');
+                    throw new Error('fail');
+                });
+            }).to.throw();
+
+            expect(Invoice.find().count()).to.be.equal(0);
+        });
+
+        it('error in the event can abort transaction', function () {
+            const emitter = new EventEmitter();
+            emitter.on('event', () => {
+                Invoice.insert({});
+                throw new Error('fail');
+            });
+
+            expect(() => {
+                runInTransaction(() => {
+                    emitter.emit('event');
+                });
+            }).to.throw();
+
+            expect(Invoice.find().count()).to.be.equal(0);
+        });
+    });
+
+    describe('nested transactions', function () {
+        it('throws on nested transactions', function () {
+            expect(() => {
+                runInTransaction(() => {
+                    runInTransaction(() => {
+                    });
+                });
+            }).to.throw(/Nested transactions are not supported/);
+        });
+    });
+
+    describe('isInTransaction', function () {
+        it('returns false by default', function () {
+            expect(isInTransaction()).to.be.false;
+        });
+
+        it('returns true when inside the transaction', function () {
+            runInTransaction(() => {
+                expect(isInTransaction()).to.be.true;
+            });
         });
     });
 });

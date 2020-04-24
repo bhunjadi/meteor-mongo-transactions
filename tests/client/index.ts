@@ -1,15 +1,16 @@
 import {_} from 'meteor/underscore';
 import {expect} from 'chai';
 import {DDP} from 'meteor/ddp-client';
+import {InsertInvoiceResult} from "../types";
 
-const USER_COUNT = 25;
+const USER_COUNT = 20;
 
 function createConnection() {
     return DDP.connect(Meteor.connection._stream.rawUrl, Meteor.connection.options);
 }
 
-function callPromise(methodName, ...args) {
-    return new Promise((resolve) => {
+function callPromise<T = any>(methodName, ...args) {
+    return new Promise<T>((resolve) => {
         Meteor.call(methodName, ...args, (err, res) => {
             if (err) {
                 resolve(err);
@@ -41,13 +42,19 @@ function isFailingClient(clientId) {
 describe('Client side testing', function () {
     beforeEach(async () => {
         await callPromise('resetDatabase');
-    })
+    });
 
     /**
      * Creating 'count' DDPConnections towards the server and execute them immediately.
      * Some clients fail and should not have their own invoices and invoice items.
      */
-    async function insertWithDifferentClients(count) {
+    async function insertWithDifferentClients(count): Promise<{
+        clientId: number;
+        result: InsertInvoiceResult | Error
+    }[]> {
+        const connectionPool = _.times(count, () => createConnection());
+        // connectionPool.forEach(connection => console.log(connection.status()));
+
         const promises = [];
         _.times(count, function (index) {
             const clientId = index + 1;
@@ -62,26 +69,26 @@ describe('Client side testing', function () {
             }];
 
             // each client gets its own connection
-            const connection = createConnection();
+            const connection = connectionPool[index];
             promises.push(callWithConnectionPromise(connection, 'insertInvoice', ...params).then(result => {
                 return {
                     result,
                     clientId,
                 };
-            }).then(res => {
-                connection.close(); 
-                return res;
             }));
         });
 
-        return Promise.all(promises);
+        return Promise.all(promises).then(result => {
+            connectionPool.forEach(connection => connection.close());
+            return result;
+        });
     }
 
     it('inserts correctly', async function () {
-        await insertWithDifferentClients(USER_COUNT);
-        
-        const invoices = await callPromise('findInvoices', {});
-        const items = await callPromise('findInvoiceItems', {});
+        const results = await insertWithDifferentClients(USER_COUNT);
+
+        const invoices = await callPromise<any[]>('findInvoices', {});
+        const items = await callPromise<any[]>('findInvoiceItems', {});
 
         for (var i = 0; i < USER_COUNT; ++i) {
             const clientId = i + 1;
@@ -94,8 +101,12 @@ describe('Client side testing', function () {
             }
             else {
                 expect(clientInvoices).to.have.length(1);
-                expect(clientItems.length).to.be.gte(2);
+                expect(clientItems).to.have.length(2);
+
+                const {result: {id, itemIds}} = results.find(r => r.clientId === clientId) as {result: InsertInvoiceResult};
+                expect(_.pluck(clientInvoices, '_id')).to.be.eql([id]);
+                expect(_.pluck(clientItems, '_id')).to.be.eql(itemIds);
             }
         }
-    }).timeout(10000);
+    }).timeout(6000);
 });
