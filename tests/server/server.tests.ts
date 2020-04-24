@@ -67,7 +67,7 @@ describe('Server side testing', function () {
             invoiceId = Invoice.insert({
                 total: 100,
             });
-    
+
             itemId = InvoiceItem.insert({
                 total: 50,
                 invoiceId,
@@ -114,7 +114,7 @@ describe('Server side testing', function () {
                     throw new Error('update error');
                 });
             }).to.throw(/update error/);
-            
+
             const invoices = Invoice.find().fetch();
             const items = InvoiceItem.find().fetch();
             expect(invoices).to.be.eql([{
@@ -180,6 +180,43 @@ describe('Server side testing', function () {
             runInTransaction(() => {
                 expect(isInTransaction()).to.be.true;
             });
+        });
+    });
+
+    describe.only('using rawCollection()', function () {
+        let insertWriteResult;
+        let invoiceId;
+
+        function insert() {
+            insertWriteResult = Promise.await(Invoice.rawCollection().insert({raw: true}));
+            invoiceId = Invoice.insert({raw: false});
+        }
+
+        it('inserts correctly', function () {
+            runInTransaction(() => {
+                insert();
+            });
+
+            expect(insertWriteResult.insertedCount).to.be.equal(1);
+
+            // console.log('promise', promiseId);
+            const first = Invoice.findOne({raw: true});
+            const snd = Invoice.findOne({raw: false});
+
+            expect(first).to.be.an('object');
+            expect(snd).to.be.an('object');
+        });
+
+        it('rollbacks both values', function () {
+            expect(() => {
+                runInTransaction(() => {
+                    insert();
+
+                    throw new Error('fail');
+                });
+            }).to.throw();
+
+            expect(Invoice.find().count()).to.be.equal(0);
         });
     });
 });

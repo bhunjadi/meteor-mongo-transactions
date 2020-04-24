@@ -1,3 +1,4 @@
+// @ts-ignore
 import {MongoInternals} from 'meteor/mongo';
 
 /**
@@ -8,6 +9,7 @@ import {MongoInternals} from 'meteor/mongo';
  * https://mongodb.github.io/node-mongodb-native/3.6/api/Collection.html
  */
 
+// @ts-ignore
 export const sessionVariable = new Meteor.EnvironmentVariable();
 
 /**
@@ -206,7 +208,7 @@ RawCollection.prototype.find = function (query, options) {
 
 function createSession(options) {
     const {client} = MongoInternals.defaultRemoteCollectionDriver().mongo;
-    return Promise.await(client.startSession(options));
+    return client.startSession(options);
 }
 
 export function runInTransaction<R>(fn: () => R, options?: any): R {
@@ -218,7 +220,7 @@ export function runInTransaction<R>(fn: () => R, options?: any): R {
     let result;
     sessionVariable.withValue(session, function () {
         const session = sessionVariable.get();
-        Promise.await(session.startTransaction());
+        session.startTransaction();
         try {
             result = fn();
             Promise.await(session.commitTransaction());

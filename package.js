@@ -13,6 +13,7 @@ Package.describe({
 Package.onUse(function(api) {
   api.versionsFrom('1.10.1');
   api.use('typescript');
+  api.use('promise');
   api.use('mongo');
   api.mainModule('src/index.ts', 'server');
 });

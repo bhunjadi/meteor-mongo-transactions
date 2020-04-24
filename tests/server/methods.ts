@@ -1,6 +1,5 @@
 import {Invoice, InvoiceItem} from '../collections';
 import {runInTransaction} from 'meteor/bhunjadi:mongo-transactions';
-import {_} from 'meteor/underscore';
 
 function throwError() {
     throw new Meteor.Error('failed');
@@ -16,11 +15,12 @@ Meteor.methods({
         InvoiceItem.remove({});
     },
     insertInvoice(invoice, items, {fails}) {
+        this.unblock();
         /**
          * If it should fail, failure can happen:
          * - after invoice insert
          * - after each item insert
-         * 
+         *
          * This is to cover wider range of possibilities of errors
          */
         const numberOfInserts = 1 + items.length;
