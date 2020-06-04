@@ -1,4 +1,4 @@
-import {SessionOptions, ClientSession} from 'mongodb';
+import {SessionOptions, ClientSession, TransactionOptions} from 'mongodb';
 
 declare module 'meteor/bhunjadi:mongo-transactions' {
     class EnvironmentVariable<T> {
@@ -11,7 +11,15 @@ declare module 'meteor/bhunjadi:mongo-transactions' {
         getOrNullIfOutsideFiber(): T | null | undefined;
     }
 
+    interface RunInTransactionOptions {
+        sessionOptions?: SessionOptions;
+        transactionOptions?: TransactionOptions;
+        retry?: boolean;
+    }
+
+    type TransactionCallback<R> = (session: ClientSession) => R;
+
     const sessionVariable: EnvironmentVariable<ClientSession>;
-    function runInTransaction<R>(fn: () => R, options?: SessionOptions): R;
+    function runInTransaction<R>(fn: TransactionCallback<R>, options?: RunInTransactionOptions): R;
     function isInTransaction(): boolean;
 }

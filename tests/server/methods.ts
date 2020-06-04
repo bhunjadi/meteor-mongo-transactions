@@ -66,5 +66,33 @@ Meteor.methods({
     },
     findInvoiceItems(filters) {
         return InvoiceItem.find(filters).fetch();
+    },
+
+    // utility method for concurrency testing
+    insertInvoiceNoTransaction(data) {
+        return Invoice.insert(data);
+    },
+    updateInvoiceInTransaction({invoiceId, timeoutBefore, timeoutAfter, debug, id}) {
+        runInTransaction(() => {
+            debug && console.log(`Transaction ${id} waiting before update ${timeoutBefore} ms`);
+
+            const invoice = Invoice.findOne(invoiceId)!;
+            debug && console.log(`Transaction ${id} read total of ${invoice.total}`);
+    
+            Meteor._sleepForMs(timeoutBefore);
+            debug && console.log(`Transaction ${id} updating`);
+
+            Invoice.update(invoiceId, {
+                $set: {
+                    total: invoice.total + 50,
+                },
+            });
+
+            debug && console.log(`Transaction ${id} waiting after update ${timeoutAfter} ms`);
+            Meteor._sleepForMs(timeoutAfter);
+            debug && console.log(`Transaction ${id} done`);
+        }, {
+            retry: true,
+        });
     }
 });

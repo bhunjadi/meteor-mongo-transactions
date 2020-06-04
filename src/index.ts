@@ -1,5 +1,6 @@
 // @ts-ignore
 import {MongoInternals} from 'meteor/mongo';
+import type {SessionOptions, TransactionOptions, ClientSession, MongoClient} from 'mongodb';
 
 /**
  * Ideas from:
@@ -206,37 +207,74 @@ RawCollection.prototype.find = function (query, options) {
     return originalFind.call(this, query, options);
 };
 
-function getClient() {
+function getClient(): MongoClient {
     const {client} = MongoInternals.defaultRemoteCollectionDriver().mongo;
     return client;
 }
 
-function createSession(options) {
+function createSession(options?: SessionOptions) {
     return getClient().startSession(options);
 }
 
-export function runInTransaction<R>(fn: () => R, options: any = {
-    w: 'majority',
-}): R {
+export interface RunInTransactionOptions {
+    sessionOptions?: SessionOptions;
+    transactionOptions?: TransactionOptions;
+    // when true, using session.withTransaction which retries transaction callback or commit operation (whichever failed)
+    // see: https://mongodb.github.io/node-mongodb-native/3.6/api/ClientSession.html#withTransaction
+    retry?: boolean; 
+}
+
+export type TransactionCallback<R> = (session: ClientSession) => R;
+
+function runWithoutRetry<R>(session: ClientSession, fn: TransactionCallback<R>, options: RunInTransactionOptions) {
+    let result;
+    session.startTransaction(options.transactionOptions);
+    try {
+        result = fn(session);
+        Promise.await(session.commitTransaction());
+    }
+    catch (e) {
+        Promise.await(session.abortTransaction());
+        throw e;
+    }
+    finally {
+        session.endSession();
+    }
+    return result;
+}
+
+function runWithRetry<R>(session: ClientSession, fn: TransactionCallback<R>, options: RunInTransactionOptions) {
+    let result;
+    try {
+        Promise.await(session.withTransaction(() => {
+            result = fn(session);
+            // withTransactionCallback must return promise, as per docs (3.6)
+            return Promise.resolve(result);
+        }), options.transactionOptions);
+    }
+    catch (e) {
+        throw e;
+    }
+    finally {
+        session.endSession();
+    }
+    return result;
+}
+
+export function runInTransaction<R>(fn: TransactionCallback<R>, options: RunInTransactionOptions = {}): R {
     if (sessionVariable.get()) {
         throw new Error('Nested transactions are not supported');
     }
 
-    const session = createSession(options);
+    const session = createSession(options.sessionOptions);
     let result;
     sessionVariable.withValue(session, function () {
-        const session = sessionVariable.get();
-        session.startTransaction();
-        try {
-            result = fn();
-            Promise.await(session.commitTransaction());
+        const session = sessionVariable.get() as ClientSession;
+        if (options.retry) {
+            result = runWithRetry(session, fn, options);
         }
-        catch (e) {
-            Promise.await(session.abortTransaction());
-            throw e;
-        }
-        finally {
-            session.endSession();
+        else {
+            result = runWithoutRetry(session, fn, options);
         }
     });
 

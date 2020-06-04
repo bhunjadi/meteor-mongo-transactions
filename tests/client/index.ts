@@ -109,4 +109,56 @@ describe('Client side testing', function () {
             }
         }
     }).timeout(6000);
+
+    async function runConcurrentTransactions(invoiceId) {
+        const conn1 = createConnection();
+        const conn2 = createConnection();
+
+        /**
+         * Creating scenario where first transaction updates the document, but does not finish.
+         * Second transaction then tries to update the same doc (1st is still inside the transaction).
+         * 
+         * Steps:
+         * 1. Transaction 1 starts
+         * 2. Transaction 1 updates
+         * 3. Transaction 2 starts
+         * 4. Transaction 2 updates (this fails if using raw transactions)
+         * 5. Transaction 2 ends
+         * 6. Transaction 1 ends
+         * 
+         */
+        return Promise.all([
+            callWithConnectionPromise(conn1, 'updateInvoiceInTransaction', {
+                invoiceId,
+                timeoutBefore: 200,
+                timeoutAfter: 2000,
+                debug: false,
+                id: 1,
+            }),
+            callWithConnectionPromise(conn2, 'updateInvoiceInTransaction', {
+                invoiceId,
+                timeoutBefore: 2000,
+                timeoutAfter: 100,
+                debug: false,
+                id: 2,
+            }),
+        ]);
+    }
+
+    /**
+     * If using startTransaction, commitTransaction and abortTransaction this should trigger WriteConflict error.
+     */
+    it('works concurrently', async function () {
+        const invoiceId = await callPromise('insertInvoiceNoTransaction', {total: 50});
+        const [res1, res2] = await runConcurrentTransactions(invoiceId);
+
+        expect(res1).to.be.undefined;
+        expect(res2).to.be.undefined;
+
+        const invoices = await callPromise('findInvoices', {});
+        expect(invoices).to.have.length(1);
+
+        const [invoice] = invoices;
+        expect(invoice.total).to.be.equal(150);
+    }).timeout(10000);
 });
