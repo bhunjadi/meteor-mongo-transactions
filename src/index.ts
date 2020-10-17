@@ -221,7 +221,7 @@ export interface RunInTransactionOptions {
     transactionOptions?: TransactionOptions;
     // when true, using session.withTransaction which retries transaction callback or commit operation (whichever failed)
     // see: https://mongodb.github.io/node-mongodb-native/3.6/api/ClientSession.html#withTransaction
-    retry?: boolean; 
+    retry?: boolean;
 }
 
 export type TransactionCallback<R> = (session: ClientSession) => R;
@@ -250,7 +250,7 @@ function runWithRetry<R>(session: ClientSession, fn: TransactionCallback<R>, opt
             result = fn(session);
             // withTransactionCallback must return promise, as per docs (3.6)
             return Promise.resolve(result);
-        }), options.transactionOptions);
+        }, options.transactionOptions));
     }
     catch (e) {
         throw e;
