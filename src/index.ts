@@ -2,6 +2,7 @@
 import {MongoInternals} from 'meteor/mongo';
 import type {SessionOptions, TransactionOptions, ClientSession, MongoClient} from 'mongodb';
 
+// @ts-ignore
 /**
  * Ideas from:
  * https://forums.meteor.com/t/solved-transactions-with-mongodb-meteor-methods/48677
@@ -10,8 +11,7 @@ import type {SessionOptions, TransactionOptions, ClientSession, MongoClient} fro
  * https://mongodb.github.io/node-mongodb-native/3.6/api/Collection.html
  */
 
-// @ts-ignore
-export const sessionVariable = new Meteor.EnvironmentVariable();
+export const sessionVariable = new Meteor.EnvironmentVariable<ClientSession>();
 
 /**
  * Function that adds session (if necessary) to options and callback method arguments.
