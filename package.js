@@ -1,6 +1,6 @@
 Package.describe({
   name: 'bhunjadi:mongo-transactions',
-  version: '0.0.1',
+  version: '1.0.0',
   // Brief, one-line summary of the package.
   summary: '',
   // URL to the Git repository containing the source code for this package.
@@ -11,7 +11,7 @@ Package.describe({
 });
 
 Package.onUse(function(api) {
-  api.versionsFrom('1.10.1');
+  api.versionsFrom('1.12');
   api.use('typescript');
   api.use('promise');
   api.use('mongo');
