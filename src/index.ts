@@ -269,7 +269,7 @@ export function runInTransaction<R>(fn: TransactionCallback<R>, options: RunInTr
     const session = createSession(options.sessionOptions);
     let result;
     sessionVariable.withValue(session, function () {
-        const session = sessionVariable.get();
+        const session = sessionVariable.get()!;
         if (options.retry) {
             result = runWithRetry(session, fn, options);
         }
