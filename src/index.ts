@@ -11,7 +11,7 @@ import type {SessionOptions, TransactionOptions, ClientSession, MongoClient} fro
  * https://mongodb.github.io/node-mongodb-native/3.6/api/Collection.html
  */
 
-export const sessionVariable = new Meteor.EnvironmentVariable<ClientSession>();
+export const sessionVariable = new Meteor.EnvironmentVariable<ClientSession | undefined>();
 
 /**
  * Function that adds session (if necessary) to options and callback method arguments.
@@ -269,7 +269,7 @@ export function runInTransaction<R>(fn: TransactionCallback<R>, options: RunInTr
     const session = createSession(options.sessionOptions);
     let result;
     sessionVariable.withValue(session, function () {
-        const session = sessionVariable.get() as ClientSession;
+        const session = sessionVariable.get();
         if (options.retry) {
             result = runWithRetry(session, fn, options);
         }

@@ -19,7 +19,7 @@ declare module 'meteor/bhunjadi:mongo-transactions' {
 
     type TransactionCallback<R> = (session: ClientSession) => R;
 
-    const sessionVariable: EnvironmentVariable<ClientSession>;
+    const sessionVariable: EnvironmentVariable<ClientSession | undefined>;
     function runInTransaction<R>(fn: TransactionCallback<R>, options?: RunInTransactionOptions): R;
     function isInTransaction(): boolean;
 }
