@@ -1,0 +1,26 @@
+{
+  "name": "meteor-mongo-transactions",
+  "version": "1.0.0",
+  "description": "Implementation is based on using Meteor.EnvironmentVariable to store the MongoDB session and overrides in \r `MongoInternals.NpmModule.Collection` for each method that supports sessions.",
+  "main": "package.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bhunjadi/meteor-mongo-transactions.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/bhunjadi/meteor-mongo-transactions/issues"
+  },
+  "homepage": "https://github.com/bhunjadi/meteor-mongo-transactions#readme",
+  "devDependencies": {
+    "@types/meteor": "^1.4.67",
+    "@types/mongodb": "^3.6.12"
+  }
+}

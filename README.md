@@ -26,7 +26,7 @@ function (invoice, lineItems) {
 
 ### Exported methods/variables
 ```
-runInTransaction<R>(fn: () => R, options?: any): R;
+runInTransaction<R>(fn: () => R, options?: RunInTransactionOptions): R;
 ```
 
 fn - method to be run in transaction  

@@ -1,8 +1,6 @@
-// @ts-ignore
 import {MongoInternals} from 'meteor/mongo';
+import {Promise} from 'meteor/promise';
 import type {SessionOptions, TransactionOptions, ClientSession, MongoClient} from 'mongodb';
-
-// @ts-ignore
 /**
  * Ideas from:
  * https://forums.meteor.com/t/solved-transactions-with-mongodb-meteor-methods/48677
@@ -226,7 +224,7 @@ export interface RunInTransactionOptions {
 
 export type TransactionCallback<R> = (session: ClientSession) => R;
 
-function runWithoutRetry<R>(session: ClientSession, fn: TransactionCallback<R>, options: RunInTransactionOptions) {
+function runWithoutRetry<R>(session: ClientSession, fn: TransactionCallback<R>, options: RunInTransactionOptions): R {
     let result;
     session.startTransaction(options.transactionOptions);
     try {
@@ -243,7 +241,7 @@ function runWithoutRetry<R>(session: ClientSession, fn: TransactionCallback<R>, 
     return result;
 }
 
-function runWithRetry<R>(session: ClientSession, fn: TransactionCallback<R>, options: RunInTransactionOptions) {
+function runWithRetry<R>(session: ClientSession, fn: TransactionCallback<R>, options: RunInTransactionOptions): R {
     let result;
     try {
         Promise.await(session.withTransaction(() => {
@@ -267,18 +265,13 @@ export function runInTransaction<R>(fn: TransactionCallback<R>, options: RunInTr
     }
 
     const session = createSession(options.sessionOptions);
-    let result;
-    sessionVariable.withValue(session, function () {
+    return sessionVariable.withValue(session, function () {
         const session = sessionVariable.get()!;
         if (options.retry) {
-            result = runWithRetry(session, fn, options);
+            return runWithRetry(session, fn, options);
         }
-        else {
-            result = runWithoutRetry(session, fn, options);
-        }
+        return runWithoutRetry(session, fn, options);
     });
-
-    return result;
 }
 
 export function isInTransaction(): boolean {
