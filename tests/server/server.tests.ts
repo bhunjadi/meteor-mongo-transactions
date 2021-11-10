@@ -214,7 +214,8 @@ import {Invoice, InvoiceItem} from '../collections';
         describe.skip('using async callbacks', function () {
             /**
              *
-             * Testing if "MongoError: Transaction N has been aborted." can occur.
+             * Testing if "MongoError: Transaction N has been aborted." 
+             * or "MongoError: Use of expired sessions is not permitted" can occur.
              *
              * This can happen when using callbacks and it seems that there is no reliable way to
              * make this work.
@@ -230,7 +231,7 @@ import {Invoice, InvoiceItem} from '../collections';
                     runInTransaction(() => {
                         Invoice.insert({}, () => {
                             InvoiceItem.insert({});
-                        })
+                        });
                         throw new Error('fail');
                     });
                 }).to.throw();

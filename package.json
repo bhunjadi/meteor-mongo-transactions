@@ -20,7 +20,9 @@
   },
   "homepage": "https://github.com/bhunjadi/meteor-mongo-transactions#readme",
   "devDependencies": {
-    "@types/meteor": "^1.4.67",
-    "@types/mongodb": "^3.6.12"
+    "@types/chai": "^4.2.22",
+    "@types/meteor": "^1.4.84",
+    "@types/mocha": "^9.0.0",
+    "@types/mongodb": "^3.6.20"
   }
 }
