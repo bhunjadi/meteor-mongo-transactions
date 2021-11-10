@@ -36,4 +36,7 @@ declare module 'meteor/bhunjadi:mongo-transactions' {
     class CallbackError extends Error {
         callbackErrors: unknown[];
     }
+
+    function setDefaultOptions(options: RunInTransactionOptions): void;
+    function getDefaultOptions(): RunInTransactionOptions;
 }

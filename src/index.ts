@@ -408,7 +408,17 @@ function runWithRetry<R>(context: SessionContext, fn: TransactionCallback<R>, op
     return result;
 }
 
-export function runInTransaction<R>(fn: TransactionCallback<R>, options: RunInTransactionOptions = {}): R {
+let defaultOptions: RunInTransactionOptions = {};
+
+export function setDefaultOptions(options: RunInTransactionOptions) {
+    defaultOptions = options;
+}
+
+export function getDefaultOptions(): RunInTransactionOptions {
+    return defaultOptions;
+}
+
+export function runInTransaction<R>(fn: TransactionCallback<R>, options: RunInTransactionOptions = defaultOptions): R {
     if (sessionVariable.get()) {
         throw new Error('Nested transactions are not supported');
     }
