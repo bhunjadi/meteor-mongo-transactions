@@ -212,23 +212,8 @@ import {Invoice, InvoiceItem, InvoiceLog} from '../collections';
     
         /**
          * Whether this should work and if this is in the scope of this package to solve is up for debate.
-         * It looks like these findings mean that the package is not compatible with matb33:collection-hooks.
          */
         describe('using async callbacks', function () {
-            /**
-             *
-             * Testing if "MongoError: Transaction N has been aborted." 
-             * or "MongoError: Use of expired sessions is not permitted" can occur.
-             *
-             * This can happen when using callbacks and it seems that there is no reliable way to
-             * make this work.
-             * It could be bypassed with long enough Meteor._sleepForMs() call. 0ms might work, too.
-             * The end result is that we have an error in the console, but nothing is written to the DB.
-             *
-             * That being said, I assume there is a possibility that async callback takes a long time and we
-             * lose the client session, which would result in InvoiceItem to be written, but not an Invoice.
-             *
-             */
             it('callback is executed within transaction', function () {
                 expect(() => {
                     runInTransaction(() => {
@@ -244,13 +229,31 @@ import {Invoice, InvoiceItem, InvoiceLog} from '../collections';
                 expect(Invoice.find().count()).to.be.equal(0);
                 expect(InvoiceItem.find().count()).to.be.equal(0);
             });
+
+            it('callback is executed within transaction and transaction succeeds', function () {
+                runInTransaction(() => {
+                    Invoice.insert({}, () => {
+                        // Using some timeout so there is no chance for callback to be called before
+                        // runInTransaction would finish without waiting for it.
+                        Meteor._sleepForMs(100);
+                        InvoiceItem.insert({});
+                    });
+                }, {
+                    // Using false here would fail on InvoiceItem.find().count() test since runInTransaction would just 
+                    // return after Invoice.insert().
+                    waitForCallbacks: true,
+                });
+    
+                expect(Invoice.find().count()).to.be.equal(1);
+                expect(InvoiceItem.find().count()).to.be.equal(1);
+            });
     
             /**
              * Another callbacks use case, but this time we throw an error in async callback.
              * This time, we are guaranteed to have incorrect results; both Invoice and InvoiceItem
              * will be written to DB.
              */
-            it.skip('callback error should cause abort', function () {
+            it('callback error should cause abort', function () {
                 expect(() => {
                     runInTransaction(() => {
                         Invoice.insert({}, (err, res) => {
@@ -259,6 +262,7 @@ import {Invoice, InvoiceItem, InvoiceLog} from '../collections';
                         });
                     }, {
                         waitForCallbacks: true,
+                        catchCallbackErrors: true,
                     });
                 }).to.throw(/fail/);
     

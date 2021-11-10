@@ -108,7 +108,7 @@ describe('Client side testing', function () {
                 expect(_.pluck(clientItems, '_id')).to.be.eql(itemIds);
             }
         }
-    }).timeout(6000);
+    }).timeout(10000);
 
     async function runConcurrentTransactions(invoiceId) {
         const conn1 = createConnection();
