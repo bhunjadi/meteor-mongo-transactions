@@ -1,6 +1,7 @@
 import {MongoInternals} from 'meteor/mongo';
 import {Promise} from 'meteor/promise';
 import type {SessionOptions, TransactionOptions, ClientSession, MongoClient} from 'mongodb';
+
 /**
  * Ideas from:
  * https://forums.meteor.com/t/solved-transactions-with-mongodb-meteor-methods/48677
@@ -9,16 +10,52 @@ import type {SessionOptions, TransactionOptions, ClientSession, MongoClient} fro
  * https://mongodb.github.io/node-mongodb-native/3.6/api/Collection.html
  */
 
-export const sessionVariable = new Meteor.EnvironmentVariable<ClientSession | undefined>();
+interface SessionContext {
+    session: ClientSession;
+    callbackCount: number;
+    callbackErrors: unknown[];
+    resolveCallbacks();
+}
+
+export const sessionVariable = new Meteor.EnvironmentVariable<SessionContext | undefined>();
+
+function wrapCallback(callback: Function) {
+    const context = sessionVariable.get();
+    if (!context) {
+        return callback;
+    }
+
+    context.callbackCount += 1;
+
+    return Meteor.bindEnvironment(function (this: unknown, ...args: unknown[]) {
+        let callbackRes;
+        try {
+            callbackRes = callback.call(this, ...args);
+        }
+        catch (e) {
+            // right now, this is never triggered since Meteor.wrapAsync swallows errors
+            context.callbackErrors.push(e);
+        }
+        finally {
+            context.callbackCount -= 1;
+            if (context.callbackCount === 0) {
+                context.resolveCallbacks();
+            }
+        }
+        return callbackRes;
+    });
+}
 
 /**
  * Function that adds session (if necessary) to options and callback method arguments.
  */
 function getOptionsAndCallbackArgs(...args) {
-    const session = sessionVariable.get();
-    if (!session) {
+    const context = sessionVariable.get();
+    if (!context) {
         return args;
     }
+
+    const {session} = context;
 
     // nothing is passed here
     if (args.length === 0) {
@@ -28,7 +65,7 @@ function getOptionsAndCallbackArgs(...args) {
     if (args.length === 1) {
         const [optionsOrCallback] = args;
         if (typeof optionsOrCallback === 'function') {
-            return [{session}, optionsOrCallback];
+            return [{session}, wrapCallback(optionsOrCallback)];
         }
         // we have options in optionsOrCallback
         return [{
@@ -41,7 +78,7 @@ function getOptionsAndCallbackArgs(...args) {
     return [{
         ...options,
         session,
-    }, callback];
+    }, callback ? wrapCallback(callback) : undefined];
 }
 
 const RawCollection = MongoInternals.NpmModule.Collection;
@@ -220,15 +257,30 @@ export interface RunInTransactionOptions {
     // when true, using session.withTransaction which retries transaction callback or commit operation (whichever failed)
     // see: https://mongodb.github.io/node-mongodb-native/3.6/api/ClientSession.html#withTransaction
     retry?: boolean;
+    waitForCallbacks?: boolean;
 }
 
 export type TransactionCallback<R> = (session: ClientSession) => R;
 
-function runWithoutRetry<R>(session: ClientSession, fn: TransactionCallback<R>, options: RunInTransactionOptions): R {
+type RunOptions = RunInTransactionOptions & {
+    waitForCallbacksPromise?: Promise<void>;
+}
+
+function runWithoutRetry<R>(context: SessionContext, fn: TransactionCallback<R>, options: RunOptions): R {
+    const {session} = context;
+
     let result;
     session.startTransaction(options.transactionOptions);
     try {
-        result = fn(session);
+        try {
+            result = fn(session);
+        }
+        finally {
+            if (options.waitForCallbacksPromise && context.callbackCount > 0) {
+                Promise.await(options.waitForCallbacksPromise);
+            }
+        }
+
         Promise.await(session.commitTransaction());
     }
     catch (e) {
@@ -241,11 +293,22 @@ function runWithoutRetry<R>(session: ClientSession, fn: TransactionCallback<R>, 
     return result;
 }
 
-function runWithRetry<R>(session: ClientSession, fn: TransactionCallback<R>, options: RunInTransactionOptions): R {
+function runWithRetry<R>(context: SessionContext, fn: TransactionCallback<R>, options: RunOptions): R {
+    const {session} = context;
     let result;
     try {
         Promise.await(session.withTransaction(() => {
-            result = fn(session);
+            try {
+                result = fn(session);
+            }
+            finally {
+                if (options.waitForCallbacksPromise && context.callbackCount > 0) {
+                    Promise.await(options.waitForCallbacksPromise);
+                    if (context.callbackErrors[0]) {
+                        // throw new Error(context.callbackErrors[0]);
+                    }
+                }
+            }
             // withTransactionCallback must return promise, as per docs (3.6)
             return Promise.resolve(result);
         }, options.transactionOptions));
@@ -265,16 +328,33 @@ export function runInTransaction<R>(fn: TransactionCallback<R>, options: RunInTr
     }
 
     const session = createSession(options.sessionOptions);
-    return sessionVariable.withValue(session, function () {
-        const session = sessionVariable.get()!;
+
+    let resolver: () => void = () => {};
+    const callbackPromise = options.waitForCallbacks ? new Promise<void>((resolve) => {
+        resolver = resolve;
+    }) : undefined;
+
+    return sessionVariable.withValue({
+        session,
+        callbackCount: 0,
+        resolveCallbacks: resolver,
+        callbackErrors: [],
+    }, function () {
+        const context = sessionVariable.get()!;
         if (options.retry) {
-            return runWithRetry(session, fn, options);
+            return runWithRetry(context, fn, {
+                ...options,
+                waitForCallbacksPromise: callbackPromise,
+            });
         }
-        return runWithoutRetry(session, fn, options);
+        return runWithoutRetry(context, fn, {
+            ...options,
+            waitForCallbacksPromise: callbackPromise,
+        });
     });
 }
 
 export function isInTransaction(): boolean {
-    const session = sessionVariable.get();
-    return session?.inTransaction() ?? false;
+    const context = sessionVariable.get();
+    return context?.session.inTransaction() ?? false;
 }

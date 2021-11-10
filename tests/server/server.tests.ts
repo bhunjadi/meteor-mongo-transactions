@@ -1,15 +1,18 @@
 import {runInTransaction as _runInTransaction, isInTransaction} from 'meteor/bhunjadi:mongo-transactions';
 import {expect} from 'chai';
 import EventEmitter from 'events';
-import {Invoice, InvoiceItem} from '../collections';
+import {Invoice, InvoiceItem, InvoiceLog} from '../collections';
 
 [true, false].forEach(retry => {
     const runInTransactionOptions = {
         retry,
     };
 
-    function runInTransaction(fn) {
-        return _runInTransaction(fn, runInTransactionOptions);
+    function runInTransaction(fn, options = {}) {
+        return _runInTransaction(fn, {
+            ...options,
+            ...runInTransactionOptions,
+        });
     }
 
     describe(`Server side testing. Transactions${retry ? ' with retry' : ' without retry'}`, function () {
@@ -211,7 +214,7 @@ import {Invoice, InvoiceItem} from '../collections';
          * Whether this should work and if this is in the scope of this package to solve is up for debate.
          * It looks like these findings mean that the package is not compatible with matb33:collection-hooks.
          */
-        describe.skip('using async callbacks', function () {
+        describe('using async callbacks', function () {
             /**
              *
              * Testing if "MongoError: Transaction N has been aborted." 
@@ -233,8 +236,10 @@ import {Invoice, InvoiceItem} from '../collections';
                             InvoiceItem.insert({});
                         });
                         throw new Error('fail');
+                    }, {
+                        waitForCallbacks: true,
                     });
-                }).to.throw();
+                }).to.throw(/fail/);
     
                 expect(Invoice.find().count()).to.be.equal(0);
                 expect(InvoiceItem.find().count()).to.be.equal(0);
@@ -245,13 +250,17 @@ import {Invoice, InvoiceItem} from '../collections';
              * This time, we are guaranteed to have incorrect results; both Invoice and InvoiceItem
              * will be written to DB.
              */
-            it('callback error should cause abort', function () {
-                runInTransaction(() => {
-                    Invoice.insert({}, (err, res) => {
-                        InvoiceItem.insert({});
-                        throw new Error('fail');
+            it.skip('callback error should cause abort', function () {
+                expect(() => {
+                    runInTransaction(() => {
+                        Invoice.insert({}, (err, res) => {
+                            InvoiceItem.insert({});
+                            throw new Error('fail');
+                        });
+                    }, {
+                        waitForCallbacks: true,
                     });
-                });
+                }).to.throw(/fail/);
     
                 expect(Invoice.find().count()).to.be.equal(0);
                 expect(InvoiceItem.find().count()).to.be.equal(0);
