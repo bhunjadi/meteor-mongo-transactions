@@ -1,6 +1,15 @@
 import {MongoInternals} from 'meteor/mongo';
 import {Promise} from 'meteor/promise';
-import type {SessionOptions, TransactionOptions, ClientSession, MongoClient} from 'mongodb';
+import type {
+    SessionOptions, 
+    TransactionOptions,
+    ClientSession, 
+    MongoClient, 
+    Collection as MongoDBCollection, 
+    FilterQuery,
+    MongoClientOptions,
+} from 'mongodb';
+
 /**
  * Ideas from:
  * https://forums.meteor.com/t/solved-transactions-with-mongodb-meteor-methods/48677
@@ -9,16 +18,121 @@ import type {SessionOptions, TransactionOptions, ClientSession, MongoClient} fro
  * https://mongodb.github.io/node-mongodb-native/3.6/api/Collection.html
  */
 
-export const sessionVariable = new Meteor.EnvironmentVariable<ClientSession | undefined>();
+interface SessionContext {
+    session: ClientSession;
+    catchCallbackErrors: boolean;
+
+    callbackCount: number;
+    callbackErrors: unknown[];
+    resolveCallbacks();
+}
+
+export class CallbackError extends Error {
+    constructor(message: string, private callbackErrors: unknown[]) {
+        super(message);
+    }
+}
+
+function createCallbackError(errors: unknown[]) {
+    const first = errors[0];
+    
+    const message = typeof first === 'string' 
+        ? first 
+        : (first instanceof Error) ? first.message : 'Unknown callback error.';
+
+    return new CallbackError(message, errors);
+}
+
+/**
+ * Storing context here for each transaction.
+ */
+export const sessionVariable = new Meteor.EnvironmentVariable<SessionContext | undefined>();
+
+/**
+ * This function uses onException parameter to log all exceptions that have happened in bindEnvironment and 
+ * stores them in SessionContext.
+ * That way we can know which errors did happen in async functions.
+ */
+function patchBindEnvironment() {
+    const originalBindEnvironment = Meteor.bindEnvironment as any;
+    Meteor.bindEnvironment = function (fn, onException, _this) {
+
+        const context = sessionVariable.get();
+
+        if (context?.catchCallbackErrors) {
+            // Same constraints as in original method
+            // @ts-ignore
+            Meteor._nodeCodeMustBeInFiber();
+
+            // Had to copy this from bindEnvironment since we're overriding onException callback and we must
+            // keep validation here.
+            if (!onException || typeof(onException) === 'string') {
+                var description = onException || "callback of async function";
+                onException = function (error) {
+                Meteor._debug(
+                    "Exception in " + description + ":",
+                    error
+                );
+                };
+            } else if (typeof(onException) !== 'function') {
+                throw new Error('onException argument must be a function, string or undefined for Meteor.bindEnvironment().');
+            }
+
+            // Wrapper function which keeps track of all 
+            const wrappedOnException = function (error) {
+                const ctx = sessionVariable.get();
+                if (ctx?.catchCallbackErrors) {
+                    context.callbackErrors.push(error);
+                }
+                // do the default
+                onException(error);
+            };
+
+            return originalBindEnvironment(fn, wrappedOnException, _this);
+        }
+
+        return originalBindEnvironment(fn, onException, _this);
+    } as any;
+}
+patchBindEnvironment();
+
+/**
+ * With this function we wrap each callback function to keep track of all the async callbacks that were created for a session.
+ * When callbacks number falls to 0, promise waiting for all callbacks to be done is resolved.
+ */
+function wrapCallback(callback: Function) {
+    const context = sessionVariable.get();
+    if (!context) {
+        return callback;
+    }
+
+    context.callbackCount += 1;
+
+    return Meteor.bindEnvironment(function (this: unknown, ...args: unknown[]) {
+        const callbackRes = callback.call(this, ...args);
+
+        // Note: Is this even necessary or we can just use context here?
+        const ctx = sessionVariable.get();
+        if (ctx) {
+            ctx.callbackCount -= 1;
+            if (ctx.callbackCount === 0) {
+                ctx.resolveCallbacks();
+            }
+        }
+        return callbackRes;
+    });
+}
 
 /**
  * Function that adds session (if necessary) to options and callback method arguments.
  */
 function getOptionsAndCallbackArgs(...args) {
-    const session = sessionVariable.get();
-    if (!session) {
+    const context = sessionVariable.get();
+    if (!context) {
         return args;
     }
+
+    const {session} = context;
 
     // nothing is passed here
     if (args.length === 0) {
@@ -28,7 +142,7 @@ function getOptionsAndCallbackArgs(...args) {
     if (args.length === 1) {
         const [optionsOrCallback] = args;
         if (typeof optionsOrCallback === 'function') {
-            return [{session}, optionsOrCallback];
+            return [{session}, wrapCallback(optionsOrCallback)];
         }
         // we have options in optionsOrCallback
         return [{
@@ -41,11 +155,10 @@ function getOptionsAndCallbackArgs(...args) {
     return [{
         ...options,
         session,
-    }, callback];
+    }, callback ? wrapCallback(callback) : undefined];
 }
 
 const RawCollection = MongoInternals.NpmModule.Collection;
-
 /**
  * Most of the MongoDB's Collection methods belong in one of the three categories by the signature:
  * 1. (options, callback)
@@ -195,11 +308,11 @@ METHODS_WITH_THREE_PARAMS.forEach(method => {
 // special case for find
 const originalFind = RawCollection.prototype.find;
 RawCollection.prototype.find = function (query, options) {
-    const session = sessionVariable.get();
-    if (session) {
+    const context = sessionVariable.get();
+    if (context) {
         return originalFind.call(this, query, {
             ...options,
-            session,
+            session: context.session,
         });
     }
     return originalFind.call(this, query, options);
@@ -220,15 +333,40 @@ export interface RunInTransactionOptions {
     // when true, using session.withTransaction which retries transaction callback or commit operation (whichever failed)
     // see: https://mongodb.github.io/node-mongodb-native/3.6/api/ClientSession.html#withTransaction
     retry?: boolean;
+
+    // Should the runInTransaction wait for all async callbacks, for example Meteor.insert({}, callback);
+    // Might be useful if cache is used.
+    waitForCallbacks?: boolean;
+    // Whether runInTransaction should catch async functions errors. 
+    // True value only makes sense if waitForCallbacks is true.
+    // If there are any errors, runInTransaction will throw an error.
+    catchCallbackErrors?: boolean;
 }
 
 export type TransactionCallback<R> = (session: ClientSession) => R;
 
-function runWithoutRetry<R>(session: ClientSession, fn: TransactionCallback<R>, options: RunInTransactionOptions): R {
+type RunOptions = RunInTransactionOptions & {
+    waitForCallbacksPromise?: Promise<void>;
+}
+
+function runWithoutRetry<R>(context: SessionContext, fn: TransactionCallback<R>, options: RunOptions): R {
+    const {session} = context;
+
     let result;
     session.startTransaction(options.transactionOptions);
     try {
-        result = fn(session);
+        try {
+            result = fn(session);
+        }
+        finally {
+            if (options.waitForCallbacksPromise && context.callbackCount > 0) {
+                Promise.await(options.waitForCallbacksPromise);
+                if (context.callbackErrors[0]) {
+                    throw createCallbackError(context.callbackErrors);
+                }
+            }
+        }
+
         Promise.await(session.commitTransaction());
     }
     catch (e) {
@@ -241,11 +379,22 @@ function runWithoutRetry<R>(session: ClientSession, fn: TransactionCallback<R>, 
     return result;
 }
 
-function runWithRetry<R>(session: ClientSession, fn: TransactionCallback<R>, options: RunInTransactionOptions): R {
+function runWithRetry<R>(context: SessionContext, fn: TransactionCallback<R>, options: RunOptions): R {
+    const {session} = context;
     let result;
     try {
         Promise.await(session.withTransaction(() => {
-            result = fn(session);
+            try {
+                result = fn(session);
+            }
+            finally {
+                if (options.waitForCallbacksPromise && context.callbackCount > 0) {
+                    Promise.await(options.waitForCallbacksPromise);
+                    if (context.callbackErrors[0]) {
+                        throw createCallbackError(context.callbackErrors);
+                    }
+                }
+            }
             // withTransactionCallback must return promise, as per docs (3.6)
             return Promise.resolve(result);
         }, options.transactionOptions));
@@ -259,22 +408,50 @@ function runWithRetry<R>(session: ClientSession, fn: TransactionCallback<R>, opt
     return result;
 }
 
-export function runInTransaction<R>(fn: TransactionCallback<R>, options: RunInTransactionOptions = {}): R {
+let defaultOptions: RunInTransactionOptions = {};
+
+export function setDefaultOptions(options: RunInTransactionOptions) {
+    defaultOptions = options;
+}
+
+export function getDefaultOptions(): RunInTransactionOptions {
+    return defaultOptions;
+}
+
+export function runInTransaction<R>(fn: TransactionCallback<R>, options: RunInTransactionOptions = defaultOptions): R {
     if (sessionVariable.get()) {
         throw new Error('Nested transactions are not supported');
     }
 
     const session = createSession(options.sessionOptions);
-    return sessionVariable.withValue(session, function () {
-        const session = sessionVariable.get()!;
+
+    let resolver: () => void = () => {};
+    const callbackPromise = options.waitForCallbacks ? new Promise<void>((resolve) => {
+        resolver = resolve;
+    }) : undefined;
+
+    return sessionVariable.withValue({
+        session,
+        callbackCount: 0,
+        catchCallbackErrors: !!options.waitForCallbacks && !!options.catchCallbackErrors,
+        resolveCallbacks: resolver,
+        callbackErrors: [],
+    }, function () {
+        const context = sessionVariable.get()!;
         if (options.retry) {
-            return runWithRetry(session, fn, options);
+            return runWithRetry(context, fn, {
+                ...options,
+                waitForCallbacksPromise: callbackPromise,
+            });
         }
-        return runWithoutRetry(session, fn, options);
+        return runWithoutRetry(context, fn, {
+            ...options,
+            waitForCallbacksPromise: callbackPromise,
+        });
     });
 }
 
 export function isInTransaction(): boolean {
-    const session = sessionVariable.get();
-    return session?.inTransaction() ?? false;
+    const context = sessionVariable.get();
+    return context?.session.inTransaction() ?? false;
 }

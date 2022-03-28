@@ -7,5 +7,7 @@ declare module 'meteor/mongo' {
                 prototype: Record<string, any>;
             };
         };
+
+        var Connection: any;
     }    
 }
