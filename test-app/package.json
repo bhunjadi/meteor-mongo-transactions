@@ -6,9 +6,9 @@
     "test": "TEST_BROWSER_DRIVER=puppeteer MONGO_URL= ROOT_URL= meteor test-packages --driver-package meteortesting:mocha ../"
   },
   "dependencies": {
-    "@babel/runtime": "^7.8.3",
-    "chai": "^4.2.0",
-    "meteor-node-stubs": "^1.0.0",
-    "puppeteer": "^3.0.0"
+    "@babel/runtime": "^7.15.4",
+    "chai": "^4.3.6",
+    "meteor-node-stubs": "^1.1.0",
+    "puppeteer": "^13.5.1"
   }
 }

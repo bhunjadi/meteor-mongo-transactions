@@ -214,7 +214,7 @@ import {Invoice, InvoiceItem, InvoiceLog} from '../collections';
          * Whether this should work and if this is in the scope of this package to solve is up for debate.
          */
         describe('using async callbacks', function () {
-            it('callback is executed within transaction', function () {
+            it('callback is executed within transaction - insert', function () {
                 expect(() => {
                     runInTransaction(() => {
                         Invoice.insert({}, () => {
@@ -227,6 +227,30 @@ import {Invoice, InvoiceItem, InvoiceLog} from '../collections';
                 }).to.throw(/fail/);
     
                 expect(Invoice.find().count()).to.be.equal(0);
+                expect(InvoiceItem.find().count()).to.be.equal(0);
+            });
+
+            it('callback is executed within transaction - update', function () {
+                Invoice.insert({_id: '1'});
+
+                expect(() => {
+                    runInTransaction(() => {
+                        Invoice.update('1', {
+                            $set: {
+                                amount: 500,
+                            },
+                        }, {}, () => {
+                            InvoiceItem.insert({});
+                        });
+                        throw new Error('fail');
+                    }, {
+                        waitForCallbacks: true,
+                    });
+                }).to.throw(/fail/);
+    
+                const invoices = Invoice.find().fetch();
+                expect(invoices.length).to.be.equal(1);
+                expect(invoices[0].amount).to.be.undefined;
                 expect(InvoiceItem.find().count()).to.be.equal(0);
             });
 
