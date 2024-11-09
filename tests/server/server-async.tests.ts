@@ -304,12 +304,12 @@ import { waitFor } from '../test.utils';
         expect(await InvoiceItem.find().countAsync()).to.be.equal(0);
       });
 
+      // NOTE: Async callbacks are generally not supported in Meteor, i.e. cannot wait for
+      // promise in runInTransaction because Promise is not returned.
+      // Not sure if this is easily solvable
       it.skip('callback is executed within transaction and transaction succeeds', async function () {
         await runInTransaction(
           async () => {
-            debugger;
-            // TODO: Async callbacks are generally not supported in Meteor, i.e. cannot wait for
-            // promise in runInTransaction because Promise is not returned.
             await Invoice.insertAsync({}, async () => {
               // Using some timeout so there is no chance for callback to be called before
               // runInTransaction would finish without waiting for it.
