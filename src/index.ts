@@ -153,7 +153,7 @@ function runWithoutRetry<R>(
     Promise.await(session.abortTransaction());
     throw e;
   } finally {
-    session.endSession();
+    Promise.await(session.endSession());
   }
   return result;
 }
