@@ -121,10 +121,10 @@ export interface RunInTransactionOptions {
 export type TransactionCallback<R> = (session: ClientSession) => R;
 export type TransactionCallbackAsync<R> = (
   session: ClientSession,
-) => Promise<R>;
+) => globalThis.Promise<R>;
 
 type RunOptions = RunInTransactionOptions & {
-  waitForCallbacksPromise?: Promise<void>;
+  waitForCallbacksPromise?: globalThis.Promise<void>;
 };
 
 function runWithoutRetry<R>(
