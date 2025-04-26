@@ -20,7 +20,9 @@ import { waitFor } from '../test.utils';
     });
   }
 
-  describe(`[ASYNC] Server side testing. Transactions${retry ? ' with retry' : ' without retry'}`, function () {
+  describe(`[ASYNC] Server side testing. Transactions${
+    retry ? ' with retry' : ' without retry'
+  }`, function () {
     beforeEach(async () => {
       await Invoice.removeAsync({});
       await InvoiceItem.removeAsync({});
@@ -51,8 +53,8 @@ import { waitFor } from '../test.utils';
 
         expect(result).to.be.equal(expectedId);
 
-        const invoices = Invoice.find().fetch();
-        const items = InvoiceItem.find().fetch();
+        const invoices = await Invoice.find().fetchAsync();
+        const items = await InvoiceItem.find().fetchAsync();
         expect(invoices).to.be.eql([
           {
             _id: expectedId,
@@ -147,8 +149,8 @@ import { waitFor } from '../test.utils';
           expect(e.message).to.equal('update error');
         }
 
-        const invoices = Invoice.find().fetch();
-        const items = InvoiceItem.find().fetch();
+        const invoices = await Invoice.find().fetchAsync();
+        const items = await InvoiceItem.find().fetchAsync();
         expect(invoices).to.be.eql([
           {
             _id: invoiceId,

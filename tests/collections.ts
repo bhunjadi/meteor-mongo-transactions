@@ -6,9 +6,9 @@ export const InvoiceLog = new Mongo.Collection<any>('invoice_log');
 // example: BulkWriteError: Cannot create namespace meteor.invoice in multi-document transaction.
 
 // this forces creationg of all collections OUTSIDE of transaction
-[Invoice, InvoiceItem, InvoiceLog].forEach(collection => {
-    collection.insert({});
-});
+for (const collection of [Invoice, InvoiceItem, InvoiceLog]) {
+  await collection.insertAsync({});
+}
 
-Invoice.remove({});
-InvoiceItem.remove({});
+await Invoice.removeAsync({});
+await InvoiceItem.removeAsync({});

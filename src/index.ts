@@ -1,5 +1,4 @@
 import { MongoInternals } from 'meteor/mongo';
-import { Promise } from 'meteor/promise';
 import type {
   ClientSessionOptions,
   TransactionOptions,
@@ -18,10 +17,7 @@ import { SessionContext } from './types';
  */
 
 export class CallbackError extends Error {
-  constructor(
-    message: string,
-    private callbackErrors: unknown[],
-  ) {
+  constructor(message: string, private callbackErrors: unknown[]) {
     super(message);
   }
 }
@@ -33,8 +29,8 @@ function createCallbackError(errors: unknown[]) {
     typeof first === 'string'
       ? first
       : first instanceof Error
-        ? first.message
-        : 'Unknown callback error.';
+      ? first.message
+      : 'Unknown callback error.';
 
   return new CallbackError(message, errors);
 }
@@ -118,7 +114,7 @@ export interface RunInTransactionOptions {
   catchCallbackErrors?: boolean;
 }
 
-export type TransactionCallback<R> = (session: ClientSession) => R;
+export type TransactionCallback<R> = (session: ClientSession) => R | Promise<R>;
 export type TransactionCallbackAsync<R> = (
   session: ClientSession,
 ) => globalThis.Promise<R>;
@@ -127,71 +123,69 @@ type RunOptions = RunInTransactionOptions & {
   waitForCallbacksPromise?: globalThis.Promise<void>;
 };
 
-function runWithoutRetry<R>(
+async function runWithoutRetry<R>(
   context: SessionContext,
   fn: TransactionCallback<R>,
   options: RunOptions,
-): R {
+): Promise<R> {
   const { session } = context;
 
   let result;
   session.startTransaction(options.transactionOptions);
   try {
     try {
-      result = fn(session);
+      result = await fn(session);
     } finally {
       if (options.waitForCallbacksPromise && context.callbackCount > 0) {
-        Promise.await(options.waitForCallbacksPromise);
+        await options.waitForCallbacksPromise;
         if (context.callbackErrors[0]) {
           throw createCallbackError(context.callbackErrors);
         }
       }
     }
 
-    Promise.await(session.commitTransaction());
+    await session.commitTransaction();
   } catch (e) {
-    Promise.await(session.abortTransaction());
+    await session.abortTransaction();
     throw e;
   } finally {
-    Promise.await(session.endSession());
+    await session.endSession();
   }
   return result;
 }
 
-function runWithRetry<R>(
+async function runWithRetry<R>(
   context: SessionContext,
   fn: TransactionCallback<R>,
   options: RunOptions,
-): R {
+): Promise<R> {
   const { session } = context;
   let result;
   try {
-    Promise.await(
-      session.withTransaction(
-        (clientSession) => {
-          try {
-            result = fn(clientSession);
-          } finally {
-            if (options.waitForCallbacksPromise && context.callbackCount > 0) {
-              Promise.await(options.waitForCallbacksPromise);
-              if (context.callbackErrors[0]) {
-                throw createCallbackError(context.callbackErrors);
-              }
+    await session.withTransaction(
+      async (clientSession) => {
+        try {
+          result = fn(clientSession);
+        } finally {
+          if (options.waitForCallbacksPromise && context.callbackCount > 0) {
+            await options.waitForCallbacksPromise;
+            if (context.callbackErrors[0]) {
+              throw createCallbackError(context.callbackErrors);
             }
           }
-          // withTransactionCallback must return promise, as per docs (3.6)
-          return Promise.resolve(result);
-        },
-        {
-          ...options.transactionOptions,
-          retryWrites: true,
-        },
-      ),
+        }
+        // withTransactionCallback must return promise, as per docs (3.6)
+        return Promise.resolve(result);
+      },
+      {
+        ...options.transactionOptions,
+        retryWrites: true,
+      },
     );
   } catch (e) {
     throw e;
   } finally {
-    Promise.await(session.endSession());
+    await session.endSession();
   }
   return result;
 }
@@ -206,10 +200,10 @@ export function getDefaultOptions(): RunInTransactionOptions {
   return defaultOptions;
 }
 
-export function runInTransaction<R>(
-  fn: TransactionCallback<R>,
+export async function runInTransactionAsync<R>(
+  fn: TransactionCallbackAsync<R>,
   options: RunInTransactionOptions = defaultOptions,
-): R {
+): globalThis.Promise<R> {
   if (sessionVariable.get()) {
     throw new Error('Nested transactions are not supported');
   }
@@ -246,13 +240,6 @@ export function runInTransaction<R>(
       });
     },
   );
-}
-
-export async function runInTransactionAsync<R>(
-  fn: TransactionCallbackAsync<R>,
-  options: RunInTransactionOptions = defaultOptions,
-): globalThis.Promise<R> {
-  return runInTransaction((session) => Promise.await(fn(session)), options);
 }
 
 export function isInTransaction(): boolean {
