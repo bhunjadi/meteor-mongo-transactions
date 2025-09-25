@@ -21,9 +21,8 @@
   "homepage": "https://github.com/bhunjadi/meteor-mongo-transactions#readme",
   "devDependencies": {
     "@types/chai": "^4.3.0",
-    "@types/meteor": "^2.9.8",
-    "@types/mocha": "^9.1.0",
-    "mongodb": "4.17.2"
+    "@types/meteor": "^2.9.9",
+    "@types/mocha": "^9.1.0"
   },
   "dependencies": {
     "eventemitter2": "^6.4.9",

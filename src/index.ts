@@ -1,12 +1,8 @@
+import { Meteor } from 'meteor/meteor';
 import { MongoInternals } from 'meteor/mongo';
-import type {
-  ClientSessionOptions,
-  TransactionOptions,
-  ClientSession,
-  MongoClient,
-} from 'mongodb';
 import patchCollectionMethods from './patchCollectionMethods';
-import { SessionContext } from './types';
+import { SessionContext, ClientSessionOptions, TransactionOptions, ClientSession } from './types';
+
 
 /**
  * Ideas from:
@@ -89,7 +85,7 @@ function patchBindEnvironment() {
 }
 patchBindEnvironment();
 
-function getClient(): MongoClient {
+function getClient() {
   const { client } = MongoInternals.defaultRemoteCollectionDriver().mongo;
   return client;
 }
